@@ -37,7 +37,7 @@ line_bot_api = MessagingApi(api_client)
 line_bot_blob_api = MessagingApiBlob(api_client)
 
 # import ฟังก์ชันจาก service ที่เรียก ADK Agent
-from gemini_service import generate_text_sync, image_understanding_sync, document_understanding_sync
+from adk_runner_service import generate_text_sync, image_understanding_sync
 
 # Function สำหรับรับ webhook จาก LINE
 @functions_framework.http

@@ -1,0 +1,17 @@
+# Google ADK
+google-adk>=1.13.0
+
+# LINE Bot SDK
+line-bot-sdk>=3.0.0
+
+# Google Cloud Functions
+functions-framework>=3.0.0
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# MCP
+mcp>=1.8.0
+
+# Other dependencies
+pydantic>=2.0.0
