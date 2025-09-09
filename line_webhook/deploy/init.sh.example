@@ -1,0 +1,6 @@
+export GCP_ACCOUNT=xxx@gmail.com
+export PROJECT_ID=xxx
+export FUNCTION_NAME=xxx
+export ENTRY_POINT=line_webhook
+
+

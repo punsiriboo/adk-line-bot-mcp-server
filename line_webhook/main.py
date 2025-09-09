@@ -22,14 +22,14 @@ from linebot.v3.messaging import (
     ShowLoadingAnimationRequest,
 )
 
-# โหลด .env สำหรับตั้งค่าคีย์ลับจากไฟล์
-load_dotenv(".env", override=True)
 
-# ดึงค่าจาก environment
-CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
-CHANNEL_SECRET = os.environ["LINE_CHANNEL_SECRET"]
+CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
 
-# เตรียม configuration สำหรับ LINE Messaging API
+# ตรวจสอบว่ามี environment variables หรือไม่
+if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
+    raise ValueError("LINE_CHANNEL_ACCESS_TOKEN และ LINE_CHANNEL_SECRET ต้องถูกตั้งค่าใน environment variables")
+
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 api_client = ApiClient(configuration)
@@ -37,7 +37,7 @@ line_bot_api = MessagingApi(api_client)
 line_bot_blob_api = MessagingApiBlob(api_client)
 
 # import ฟังก์ชันจาก service ที่เรียก ADK Agent
-from adk_runner_service import generate_text_sync, image_understanding_sync
+from adk_runner_service import generate_text_sync, image_understanding_sync, document_understanding_sync
 
 # Function สำหรับรับ webhook จาก LINE
 @functions_framework.http
