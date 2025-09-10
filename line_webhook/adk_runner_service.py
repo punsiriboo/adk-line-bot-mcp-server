@@ -1,9 +1,9 @@
 """
 ADK Runner Service สำหรับรับข้อความจาก LINE และส่งต่อไปยัง ADK Agent
 """
-import os
 import asyncio
-from google.adk.runners import Runner, InMemorySessionService
+from google.adk.runners import Runner
+from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from line_oa_campaign_manager.agent import root_agent
 
@@ -11,8 +11,9 @@ from line_oa_campaign_manager.agent import root_agent
 APP_NAME = "line_oa_campaign_manager"
 USER_ID = "line_user"
 
-# Global session service และ runner - ใช้ session เดียวกันสำหรับ user เดียวกัน
-session_service = InMemorySessionService()
+
+db_url = "sqlite:///./agent_session.db"
+session_service = DatabaseSessionService(db_url=db_url)
 runner = Runner(
     agent=root_agent,
     app_name=APP_NAME,
@@ -285,22 +286,4 @@ def generate_text_sync(user_input: str) -> str:
                 else:
                     return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้ง"
 
-def image_understanding_sync(image_content) -> str:
-    """Synchronous wrapper สำหรับ image_understanding"""
-    try:
-        return asyncio.run(image_understanding(image_content))
-    except Exception as e:
-        print(f"Error in image_understanding_sync: {e}")
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        return "ขออภัย ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่อีกครั้ง"
 
-def document_understanding_sync(doc_content) -> str:
-    """Synchronous wrapper สำหรับ document_understanding"""
-    try:
-        return asyncio.run(document_understanding(doc_content))
-    except Exception as e:
-        print(f"Error in document_understanding_sync: {e}")
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")
-        return "ขออภัย ไม่สามารถวิเคราะห์เอกสารได้ กรุณาลองใหม่อีกครั้ง"

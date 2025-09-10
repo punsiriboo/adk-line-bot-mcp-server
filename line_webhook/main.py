@@ -45,7 +45,7 @@ line_bot_blob_api = MessagingApiBlob(api_client)
 
 # import ฟังก์ชันจาก service ที่เรียก ADK Agent
 try:
-    from adk_runner_service import generate_text_sync, image_understanding_sync, document_understanding_sync
+    from adk_runner_service import generate_text_sync, image_understanding_sync, document_understanding_sy
     print("✓ ADK runner service imported successfully")
 except ImportError as e:
     print(f"✗ Failed to import ADK runner service: {e}")
@@ -57,10 +57,9 @@ except ImportError as e:
     def document_understanding_sync(doc_content):
         return "ขออภัย บริการวิเคราะห์เอกสารไม่พร้อมใช้งานในขณะนี้"
 
-# สร้าง Flask app
+
 app = Flask(__name__)
 
-# Function สำหรับรับ webhook จาก LINE
 @app.route("/", methods=["POST"])
 def webhook_listening():
     try:
@@ -89,12 +88,10 @@ def webhook_listening():
         print(f"Traceback: {traceback.format_exc()}")
         return f"ERROR: {str(e)}", 500
 
-# Health check endpoint
 @app.route("/health", methods=["GET"])
 def health_check():
     return "OK", 200
 
-# กรณีข้อความเป็นประเภท Text
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
     try:
@@ -128,91 +125,3 @@ def handle_text_message(event):
             )
         except Exception as reply_error:
             print(f"Failed to send error reply: {reply_error}")
-
-# กรณีข้อความเป็นรูปภาพ
-@handler.add(MessageEvent, message=ImageMessageContent)
-def handle_image_message(event):
-    try:
-        # แสดง loading animation ระหว่างประมวลผล
-        line_bot_api.show_loading_animation_with_http_info(
-            ShowLoadingAnimationRequest(chat_id=event.source.user_id)
-        )
-
-        # ดึง binary ของภาพจาก LINE server
-        message_content = line_bot_blob_api.get_message_content(message_id=event.message.id)
-
-        # ส่งไปให้ ADK Agent วิเคราะห์ภาพ
-        gemini_reponse = image_understanding_sync(message_content)
-
-        # ตอบกลับผลลัพธ์จาก Gemini
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=gemini_reponse)],
-            )
-        )
-    except Exception as e:
-        import traceback
-        print(f"Error in handle_image_message: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        
-        # ส่งข้อความแจ้งข้อผิดพลาด
-        try:
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="ขออภัย ไม่สามารถวิเคราะห์รูปภาพได้ กรุณาลองใหม่อีกครั้ง")],
-                )
-            )
-        except Exception as reply_error:
-            print(f"Failed to send error reply: {reply_error}")
-
-# กรณีข้อความเป็นไฟล์เอกสาร
-@handler.add(MessageEvent, message=FileMessageContent)
-def handle_file_message(event):
-    try:
-        # ดึง binary ของไฟล์จาก LINE server
-        doc_content = line_bot_blob_api.get_message_content(message_id=event.message.id)
-
-        # ส่งไปให้ ADK Agent วิเคราะห์เนื้อหาในเอกสาร
-        gemini_reponse = document_understanding_sync(doc_content)
-
-        # ตอบกลับผลลัพธ์จาก Gemini
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=gemini_reponse)],
-            )
-        )
-    except Exception as e:
-        import traceback
-        print(f"Error in handle_file_message: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        
-        # ส่งข้อความแจ้งข้อผิดพลาด
-        try:
-            line_bot_api.reply_message(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text="ขออภัย ไม่สามารถวิเคราะห์เอกสารได้ กรุณาลองใหม่อีกครั้ง")],
-                )
-            )
-        except Exception as reply_error:
-            print(f"Failed to send error reply: {reply_error}")
-
-# รัน server สำหรับ Cloud Run
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    print(f"Starting server on port {port}")
-    print(f"Environment variables:")
-    print(f"  PORT: {os.environ.get('PORT', 'NOT SET')}")
-    print(f"  LINE_CHANNEL_ACCESS_TOKEN: {'SET' if os.environ.get('LINE_CHANNEL_ACCESS_TOKEN') else 'NOT SET'}")
-    print(f"  LINE_CHANNEL_SECRET: {'SET' if os.environ.get('LINE_CHANNEL_SECRET') else 'NOT SET'}")
-    print(f"  GEMINI_API_KEY: {'SET' if os.environ.get('GEMINI_API_KEY') else 'NOT SET'}")
-    print(f"  NPX_PATH: {os.environ.get('NPX_PATH', 'NOT SET')}")
-    
-    try:
-        app.run(host="0.0.0.0", port=port, debug=False)
-    except Exception as e:
-        print(f"Error starting server: {e}")
-        sys.exit(1)
