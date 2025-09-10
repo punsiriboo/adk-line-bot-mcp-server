@@ -9,9 +9,8 @@ IMAGE_NAME="gcr.io/${PROJECT_ID}/${SERVICE_NAME}"
 
 # ตรวจสอบว่า PROJECT_ID ถูกตั้งค่าแล้ว
 if [ "$PROJECT_ID" = "databeat-aiagent" ]; then
-    echo "Error: Please set GOOGLE_CLOUD_PROJECT environment variable"
-    echo "Example: export GOOGLE_CLOUD_PROJECT=your-actual-project-id"
-    exit 1
+    echo "Using default project: databeat-aiagent"
+    PROJECT_ID="databeat-aiagent"
 fi
 
 # ตั้งค่า gcloud project
