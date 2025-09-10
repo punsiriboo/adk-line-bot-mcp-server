@@ -16,8 +16,7 @@ def gemini_generate_image(prompt: str):
     """Generate image using Gemini AI and upload to Google Cloud Storage"""
     try:
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        storage_client = storage.Client()
-
+        storage_client = storage.Client.from_service_account_json("ai-agent-sa.json")
         res = client.models.generate_content(
             model="gemini-2.5-flash-image-preview",
             contents=[
@@ -86,22 +85,29 @@ try:
     channel_token = os.getenv("DEST_OA_LINE_CHANNEL_ACCESS_TOKEN")
     destination_user_id = os.getenv("DEST_OA_LINE_DESTINATION_USER_ID")
 
-    line_bot_server_mcp_toolset = MCPToolset(
-        connection_params=StdioConnectionParams(
-            server_params=StdioServerParameters(
-                command=npx_path,
-                args=[
-                    "-y",
-                    "@line/line-bot-mcp-server",
-                ],
-                env={
-                    "CHANNEL_ACCESS_TOKEN": channel_token,
-                    "DESTINATION_USER_ID": destination_user_id,
-                    "MCP_RETRY_COUNT": "3",
-                },
+    if not channel_token or not destination_user_id:
+        print("Warning: Missing LINE credentials for MCP server")
+        line_bot_server_mcp_toolset = None
+    else:
+        line_bot_server_mcp_toolset = MCPToolset(
+            connection_params=StdioConnectionParams(
+                server_params=StdioServerParameters(
+                    command=npx_path,
+                    args=[
+                        "-y",
+                        "@line/line-bot-mcp-server",
+                    ],
+                    env={
+                        "CHANNEL_ACCESS_TOKEN": channel_token,
+                        "DESTINATION_USER_ID": destination_user_id,
+                        "MCP_RETRY_COUNT": "5",  # เพิ่ม retry เป็น 5 ครั้ง
+                        "MCP_TIMEOUT": "30",     # เพิ่ม timeout เป็น 30 วินาที
+                        "MCP_INITIALIZATION_TIMEOUT": "60",  # เพิ่ม initialization timeout
+                    },
+                ),
             ),
-        ),
-    )
+        )
+        print("✓ MCP Toolset created successfully")
 except Exception as e:
     print(f"Failed to create MCP Toolset: {e}")
     import traceback

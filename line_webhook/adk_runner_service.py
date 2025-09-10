@@ -28,9 +28,7 @@ runner = Runner(
 user_sessions: dict[str, str] = {}
 
 
-# ---------------------------
-# Session helpers
-# ---------------------------
+# -------------------------
 async def get_or_create_session(user_id: str) -> str:
     """ดึงหรือสร้าง session สำหรับ user_id เดิมจะอ้างอิง session เดิมเสมอ"""
     if user_id in user_sessions:
@@ -79,10 +77,6 @@ async def process_agent_response(event) -> str | None:
 
     return None
 
-
-# ---------------------------
-# Public API
-# ---------------------------
 async def generate_text(user_input: str, user_id: str | None = None) -> str:
     """
     รับข้อความจากผู้ใช้และส่งต่อไปยัง ADK Agent

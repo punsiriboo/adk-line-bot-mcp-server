@@ -3,3 +3,4 @@ __pycache__/
 init.sh
 env.yaml
 .DS_Store
+ai-agent-sa.json
