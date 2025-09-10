@@ -1,17 +1,12 @@
-# Import libraries ที่ใช้
 import os
-import sys
 from flask import Flask, request
-from dotenv import load_dotenv
 
-# LINE SDK
+# LINE Bot SDK
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3 import WebhookHandler
 from linebot.v3.webhooks import (
     MessageEvent,
-    TextMessageContent,
-    ImageMessageContent,
-    FileMessageContent,
+    TextMessageContent
 )
 from linebot.v3.messaging import (
     Configuration,
@@ -24,38 +19,19 @@ from linebot.v3.messaging import (
 )
 
 
-CHANNEL_ACCESS_TOKEN = os.environ.get("LINE_CHANNEL_ACCESS_TOKEN")
-CHANNEL_SECRET = os.environ.get("LINE_CHANNEL_SECRET")
+CHANNEL_ACCESS_TOKEN = os.environ.get("MANAGER_OA_LINE_CHANNEL_ACCESS_TOKEN")
+CHANNEL_SECRET = os.environ.get("MANAGER_OA_LINE_CHANNEL_SECRET")
 
-# ตรวจสอบว่ามี environment variables หรือไม่
-print(f"CHANNEL_ACCESS_TOKEN: {'SET' if CHANNEL_ACCESS_TOKEN else 'NOT SET'}")
-print(f"CHANNEL_SECRET: {'SET' if CHANNEL_SECRET else 'NOT SET'}")
+print(f"MANAGER_OA_LINE_CHANNEL_ACCESS_TOKEN: {'SET' if CHANNEL_ACCESS_TOKEN else 'NOT SET'}")
+print(f"MANAGER_OA_LINE_CHANNEL_SECRET: {'SET' if CHANNEL_SECRET else 'NOT SET'}")
 
-if not CHANNEL_ACCESS_TOKEN or not CHANNEL_SECRET:
-    print("ERROR: Missing required environment variables")
-    print("Required: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET")
-    # ไม่ raise error เพื่อให้ app start ได้
-    # raise ValueError("LINE_CHANNEL_ACCESS_TOKEN และ LINE_CHANNEL_SECRET ต้องถูกตั้งค่าใน environment variables")
 
 configuration = Configuration(access_token=CHANNEL_ACCESS_TOKEN)
 handler = WebhookHandler(CHANNEL_SECRET)
 api_client = ApiClient(configuration)
 line_bot_api = MessagingApi(api_client)
 line_bot_blob_api = MessagingApiBlob(api_client)
-
-# import ฟังก์ชันจาก service ที่เรียก ADK Agent
-try:
-    from adk_runner_service import generate_text_sync, image_understanding_sync, document_understanding_sy
-    print("✓ ADK runner service imported successfully")
-except ImportError as e:
-    print(f"✗ Failed to import ADK runner service: {e}")
-    # สร้าง fallback functions
-    def generate_text_sync(text):
-        return "ขออภัย บริการ ADK Agent ไม่พร้อมใช้งานในขณะนี้"
-    def image_understanding_sync(image_content):
-        return "ขออภัย บริการวิเคราะห์รูปภาพไม่พร้อมใช้งานในขณะนี้"
-    def document_understanding_sync(doc_content):
-        return "ขออภัย บริการวิเคราะห์เอกสารไม่พร้อมใช้งานในขณะนี้"
+from line_webhook.adk_runner_service import generate_text
 
 
 app = Flask(__name__)
@@ -101,7 +77,7 @@ def handle_text_message(event):
         )
 
         # ส่งข้อความไปให้ ADK Agent ประมวลผล
-        gemini_reponse = generate_text_sync(event.message.text)
+        gemini_reponse = generate_text(user_input=event.message.text, user_id=event.source.user_id)
 
         # ตอบกลับข้อความที่ได้จาก Gemini
         line_bot_api.reply_message(

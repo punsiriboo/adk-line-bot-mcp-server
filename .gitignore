@@ -1,3 +1,5 @@
 __pycache__/
 .env
 init.sh
+env.yaml
+.DS_Store

@@ -1,20 +1,16 @@
 source ./init.sh
 
 echo "Deploying to Cloud Run..."
-gcloud run deploy ${SERVICE_NAME} \
-  --image ${IMAGE_NAME} \
+gcloud run deploy line-bot-mcp-server \
+  --image gcr.io/databeat-aiagent/line-bot-mcp-server \
   --platform managed \
-  --region ${REGION} \
+  --region asia-southeast1 \
   --allow-unauthenticated \
   --port 8080 \
   --memory 1Gi \
   --cpu 1 \
   --max-instances 10 \
-  --set-env-vars GEMINI_API_KEY=${GEMINI_API_KEY} \
-  --set-env-vars LINE_CHANNEL_ACCESS_TOKEN=${LINE_CHANNEL_ACCESS_TOKEN} \
-  --set-env-vars LINE_CHANNEL_SECRET=${LINE_CHANNEL_SECRET} \
-  --set-env-vars LINE_DESTINATION_USER_ID=${LINE_DESTINATION_USER_ID} \
-  --set-env-vars NPX_PATH=/usr/bin/npx
-
+  --env-vars-file=env.yaml
+  
 echo "Deployment completed!"
-echo "Service URL: https://${SERVICE_NAME}-${REGION}-${PROJECT_ID}.a.run.app"
+echo "Service URL: https://line-bot-mcp-server-1014335186278.asia-southeast1.run.app"

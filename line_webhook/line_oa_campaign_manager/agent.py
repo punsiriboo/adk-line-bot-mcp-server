@@ -83,8 +83,8 @@ npx_path = get_npx_path()
 print(f"Using npx command: {npx_path}")
 
 try:
-    channel_token = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
-    destination_user_id = os.getenv("LINE_DESTINATION_USER_ID", "")
+    channel_token = os.getenv("DEST_OA_LINE_CHANNEL_ACCESS_TOKEN")
+    destination_user_id = os.getenv("DEST_OA_LINE_DESTINATION_USER_ID")
 
     line_bot_server_mcp_toolset = MCPToolset(
         connection_params=StdioConnectionParams(
