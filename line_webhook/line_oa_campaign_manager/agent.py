@@ -13,40 +13,47 @@ from google.cloud import storage
 
 
 def gemini_generate_image(prompt: str):
-    """Generate image using Gemini AI and upload to Google Cloud Storage"""
+    """
+    สร้างรูปภาพโดยใช้ Gemini AI และอัปโหลดไปยัง Google Cloud Storage
+    
+    Args:
+        prompt (str): คำอธิบายหรือข้อความที่ใช้ในการสร้างรูปภาพ
+        
+    Returns:
+        str: URL ของรูปภาพใน Google Cloud Storage (รูปแบบ https://storage.googleapis.com/line-oa-campaign-manager-images/filename)
+             หรือข้อความแสดงข้อผิดพลาดหากการสร้างรูปภาพล้มเหลว
+             
+    Raises:
+        Exception: หากเกิดข้อผิดพลาดในการเชื่อมต่อ API หรือการอัปโหลดไฟล์
+    """
     try:
         client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-        storage_client = storage.Client.from_service_account_json("ai-agent-sa.json")
+        sa = Path(__file__).parent / "ai-agent-sa.json"
+        storage_client = storage.Client.from_service_account_json(sa)
+
         res = client.models.generate_content(
             model="gemini-2.5-flash-image-preview",
-            contents=[
-                types.Content(role="user",
-                parts=[
-                    types.Part.from_text(text=prompt),
-                ])
-            ],
+            contents=[types.Content(role="user", parts=[types.Part.from_text(text=prompt)])],
             config=types.GenerateContentConfig(response_modalities=["IMAGE"])
         )
 
-        for part in res.candidates[0].content.parts:
-            if getattr(part, "inline_data", None) and part.inline_data.data:
-                ext = mimetypes.guess_extension(part.inline_data.mime_type) or ".bin"
-                image_uuid = str(uuid.uuid4())
-                path = Path(f"{image_uuid}{ext}")
-                path.write_bytes(part.inline_data.data)
-                print(f"Saved image: {path}")
-                gcs_path = f"gs://line-oa-campaign-manager-images/{path.name}"
-                bucket = storage_client.bucket("line-oa-campaign-manager-images")
-                blob = bucket.blob(path.name)
-                blob.upload_from_filename(path)
-                print(f"Uploaded image to: {gcs_path}")
-                return gcs_path
-        return "Image generation failed"
-    except Exception as e:
-        print(f"Error in gemini_generate_image: {e}")
-        return f"Error generating image: {str(e)}"
+        part = next((p for p in res.candidates[0].content.parts
+                     if getattr(p, "inline_data", None) and p.inline_data.data), None)
+        if not part:
+            return "Image generation failed"
 
-# ใช้ absolute path ของ npx สำหรับ Docker container
+        ext = mimetypes.guess_extension(part.inline_data.mime_type) or ".bin"
+        path = Path(f"{uuid.uuid4()}{ext}")
+        path.write_bytes(part.inline_data.data)
+
+        bucket = storage_client.bucket("line-oa-campaign-manager-images")
+        blob = bucket.blob(path.name)
+        blob.upload_from_filename(str(path))
+
+        return f"https://storage.googleapis.com/line-oa-campaign-manager-images/{path.name}"
+    except Exception as e:
+        return f"Error generating image: {e}"
+
 def get_npx_path():
     """หาตำแหน่ง npx command สำหรับ Docker container"""
     # ใช้ environment variable ก่อน
