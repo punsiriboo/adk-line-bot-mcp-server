@@ -1,6 +1,7 @@
 import os
 import asyncio
 import threading
+import logging
 from flask import Flask, request
 
 
@@ -39,73 +40,88 @@ from adk_runner_service import generate_text
 
 app = Flask(__name__)
 
+# ตั้งค่า logging สำหรับ Cloud Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 @app.route("/", methods=["POST"])
 def webhook_listening():
     try:
         # ดึงค่า Signature จาก header
         signature = request.headers.get("X-Line-Signature", "")
-        print(f"Received signature: {signature[:20]}...")
+        logger.info(f"Received signature: {signature[:20]}...")
 
         # แปลง request body เป็น text
         body = request.get_data(as_text=True)
-        print(f"Request body length: {len(body)}")
+        logger.info(f"Request body length: {len(body)}")
+        logger.info(f"Request body: {body}")
 
         # ตรวจสอบและส่งให้ handler จาก LINE SDK จัดการ
         if CHANNEL_ACCESS_TOKEN and CHANNEL_SECRET:
+            logger.info("Processing webhook with LINE SDK")
             handler.handle(body, signature)
+            logger.info("Webhook processed successfully")
         else:
-            print("ERROR: Missing LINE credentials, cannot process webhook")
+            logger.error("ERROR: Missing LINE credentials, cannot process webhook")
             return "ERROR: Missing credentials", 500
 
         return "OK"
     except InvalidSignatureError as e:
-        print(f"Invalid signature error: {e}")
+        logger.error(f"Invalid signature error: {e}")
         return "Invalid signature", 400
     except Exception as e:
         import traceback
-        print(f"Unexpected error in webhook: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Unexpected error in webhook: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         return f"ERROR: {str(e)}", 500
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
     user_id = event.source.user_id
     user_input = event.message.text
-    line_bot_api.show_loading_animation(
-        ShowLoadingAnimationRequest(chat_id=event.source.user_id)
-    )
     
-    print(f"Received text message from {user_id}: {user_input}")
+    logger.info(f"=== NEW MESSAGE RECEIVED ===")
+    logger.info(f"User ID: {user_id}")
+    logger.info(f"Message: {user_input}")
+    logger.info(f"Reply Token: {event.reply_token}")
     
     try:
+        # แสดง loading animation
+        logger.info("Showing loading animation")
+        line_bot_api.show_loading_animation(
+            ShowLoadingAnimationRequest(chat_id=event.source.user_id)
+        )
+        
         # ใช้ synchronous wrapper ที่มีอยู่แล้วใน adk_runner_service
+        logger.info("Calling ADK runner service")
         from adk_runner_service import generate_text_sync
         response = generate_text_sync(user_input, user_id)
         
-        # ส่งคำตอบกลับไปยังผู้ใช้
-        line_bot_api.reply_message_with_http_info(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=response)])
-        )
+        logger.info(f"ADK response: {response}")
         
-        print(f"Response sent: {response}")
-        
-    except Exception as e:
-        import traceback
-        print(f"Error in handle_text_message: {e}")
-        print(f"Traceback: {traceback.format_exc()}")
-        
-        # ส่งข้อความ error กลับไปยังผู้ใช้
-        error_response = "😅 เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งนะคะ"
-        try:
+        # ตรวจสอบว่าคำตอบมาจาก agent จริงหรือไม่
+        if response and response.strip():
+            # ส่งคำตอบจาก agent กลับไปยังผู้ใช้
+            logger.info("Sending response to user")
             line_bot_api.reply_message_with_http_info(
                 ReplyMessageRequest(
                     reply_token=event.reply_token,
-                    messages=[TextMessage(text=error_response)])
+                    messages=[TextMessage(text=response)])
             )
-        except Exception as reply_error:
-            print(f"Failed to send error response: {reply_error}")
+            logger.info(f"[SUCCESS] Response sent: {response[:100]}...")
+        else:
+            # ถ้า agent ไม่ตอบ ให้ log และไม่ส่งอะไรกลับ
+            logger.warning(f"[NO RESPONSE] Agent did not provide valid response for: {user_input}")
+        
+    except Exception as e:
+        import traceback
+        logger.error(f"Error in handle_text_message: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        # ไม่ส่ง error message กลับ ให้ log error เท่านั้น
+        logger.error(f"[ERROR] Failed to process message from {user_id}: {user_input}")
 
 @app.route("/health", methods=["GET"])
 def health_check():

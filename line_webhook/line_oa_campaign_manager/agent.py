@@ -102,7 +102,7 @@ try:
         print("Warning: Missing LINE credentials for MCP server")
         line_bot_mcp_toolset = None
     else:
-        # ปรับปรุงการตั้งค่า MCP เพื่อลดปัญหา event loop
+        # ปรับปรุงการตั้งค่า MCP เพื่อลดปัญหา event loop และ subprocess cleanup
         line_bot_mcp_toolset = MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
@@ -114,10 +114,11 @@ try:
                     env={
                         "CHANNEL_ACCESS_TOKEN": channel_token,
                         "DESTINATION_USER_ID": destination_user_id,
-                        "MCP_RETRY_COUNT": "3",  # ลด retry เป็น 3 ครั้ง
-                        "MCP_TIMEOUT": "20",     # ลด timeout เป็น 20 วินาที
-                        "MCP_INITIALIZATION_TIMEOUT": "30",  # ลด initialization timeout
+                        "MCP_RETRY_COUNT": "2",  # ลด retry เป็น 2 ครั้ง
+                        "MCP_TIMEOUT": "15",     # ลด timeout เป็น 15 วินาที
+                        "MCP_INITIALIZATION_TIMEOUT": "20",  # ลด initialization timeout
                         "NODE_ENV": "production",  # เพิ่ม NODE_ENV
+                        "NODE_NO_WARNINGS": "1",   # ปิด warnings
                     },
                 ),
             ),

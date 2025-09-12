@@ -1,11 +1,15 @@
 """
-ADK Runner Service สำหรับรับข้อความจาก LINE และส่งต่อไปยัง ADK Agent (simplified)
+ADK Runner Service สำหรับรับข้อความจาก LINE และส่งต่อไปยัง ADK Agent
 """
 
+import logging
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
 from google.genai import types
 from line_oa_campaign_manager.agent import line_oa_agent
+
+# ตั้งค่า logger
+logger = logging.getLogger(__name__)
 
 # ---------------------------
 # Config
@@ -101,7 +105,7 @@ async def process_agent_response(event) -> str | None:
             for part in event.content.parts:
                 if getattr(part, "text", None) and part.text.strip():
                     return part.text.strip()
-        return "ขออภัย ไม่สามารถประมวลผลข้อความได้ กรุณาลองใหม่อีกครั้ง"
+        return None
 
     return None
 
@@ -113,12 +117,12 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
     import asyncio
 
     current_user_id = user_id or DEFAULT_USER_ID
-    print(f"[ADK] Processing message from {current_user_id}: {user_input[:100]}...")
+    logger.info(f"[ADK] Processing message from {current_user_id}: {user_input[:100]}...")
 
     try:
         # 1) ดึง/สร้าง session
         session_id = await get_or_create_session(current_user_id)
-        print(f"[ADK] Using session: {session_id}")
+        logger.info(f"[ADK] Using session: {session_id}")
 
         # 2) เตรียม content
         content = types.Content(role="user", parts=[types.Part(text=user_input)])
@@ -161,18 +165,12 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
                     
                 except Exception as gen_error:
                     print(f"[ADK] Error in async generator: {gen_error}")
-                    # ลองดึงข้อความจาก error ถ้าเป็นไปได้
-                    if "quota" in str(gen_error).lower():
-                        return "📊 กำลังตรวจสอบ quota ของ LINE Bot API กรุณารอสักครู่..."
-                    elif "timeout" in str(gen_error).lower():
-                        return "⏰ การประมวลผลใช้เวลานาน กรุณาลองใหม่อีกครั้ง..."
-                    else:
-                        return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+                    return None
                 
             except RuntimeError as e:
                 if "Event loop is closed" in str(e):
                     print("[ADK] Event loop closed error detected")
-                    return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+                    return None
                 else:
                     print(f"[ADK] Runtime error: {e}")
                     raise
@@ -190,35 +188,31 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
             print(f"[ADK] Agent completed successfully")
         except asyncio.TimeoutError:
             print("[ADK] Timeout: agent took more than 60 seconds")
-            return "⏰ กำลังประมวลผลข้อมูล กรุณารอสักครู่แล้วลองใหม่อีกครั้งนะคะ"
+            return None
         except RuntimeError as e:
             if "Event loop is closed" in str(e):
                 print("[ADK] Event loop closed error in wait_for")
-                return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+                return None
             else:
                 print(f"[ADK] Runtime error in wait_for: {e}")
                 raise
         except Exception as e:
             print(f"[ADK] Unexpected error in wait_for: {e}")
-            return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+            return None
 
-        # 5) Fallback หากยังไม่ได้คำตอบ
-        if final_response_text:
-            print(f"[ADK] Success: {final_response_text[:100]}...")
+        # 5) ส่งเฉพาะคำตอบจาก agent จริงๆ
+        if final_response_text and final_response_text.strip():
+            print(f"[ADK] Agent response: {final_response_text[:100]}...")
             return final_response_text
-        else:
-            print("[ADK] No response received from agent")
-            return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+        
+        print("[ADK] No response received from agent")
+        return None
 
     except Exception as e:
         import traceback
         print(f"[ADK] Error in generate_text: {e}")
         print(f"[ADK] Traceback: {traceback.format_exc()}")
-        # หากมีปัญหาเกี่ยวกับ MCP/Runner ให้แจ้ง fallback แบบสั้น
-        return (
-            "😅 เกิดข้อผิดพลาดเล็กน้อยในการประมวลผล "
-            "กรุณาลองใหม่อีกครั้ง หรือให้รายละเอียดเพิ่มเติมนะคะ"
-        )
+        return None
 
 
 # ---------------------------
@@ -233,7 +227,8 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
     import signal
     import os
     
-    print(f"[ADK-SYNC] Starting sync wrapper for user: {user_id}")
+    logger.info(f"[ADK-SYNC] Starting sync wrapper for user: {user_id}")
+    logger.info(f"[ADK-SYNC] Input message: {user_input}")
     
     # ใช้ threading เพื่อหลีกเลี่ยงปัญหา event loop
     result_container = [None]
@@ -248,12 +243,12 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
             loop_container[0] = loop
             
             try:
-                print(f"[ADK-SYNC] Running async function in thread...")
+                logger.info(f"[ADK-SYNC] Running async function in thread...")
                 result = loop.run_until_complete(generate_text(user_input, user_id))
                 result_container[0] = result
-                print(f"[ADK-SYNC] Completed successfully")
+                logger.info(f"[ADK-SYNC] Completed successfully - Result: {result}")
             except Exception as e:
-                print(f"[ADK-SYNC] Error in async function: {e}")
+                logger.error(f"[ADK-SYNC] Error in async function: {e}")
                 error_container[0] = e
             finally:
                 # ปิด loop อย่างปลอดภัย
@@ -263,13 +258,19 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
                     if pending:
                         print(f"[ADK-SYNC] Cancelling {len(pending)} pending tasks")
                         for task in pending:
-                            task.cancel()
+                            if not task.done():
+                                task.cancel()
                         
                         # รอให้ tasks ยกเลิกเสร็จ
                         try:
-                            loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+                            if pending:
+                                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
                         except Exception as gather_error:
                             print(f"[ADK-SYNC] Error gathering tasks: {gather_error}")
+                    
+                    # รอสักครู่เพื่อให้ subprocess cleanup เสร็จ
+                    import time
+                    time.sleep(0.1)
                     
                     # ปิด loop
                     if not loop.is_closed():
@@ -297,15 +298,20 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
             if loop_container[0] and not loop_container[0].is_closed():
                 # ส่งสัญญาณให้หยุด
                 loop_container[0].call_soon_threadsafe(lambda: None)
+                # รอสักครู่เพื่อให้ cleanup เสร็จ
+                import time
+                time.sleep(0.2)
         except Exception as cleanup_error:
             print(f"[ADK-SYNC] Cleanup error: {cleanup_error}")
-        return "⏰ การประมวลผลใช้เวลานาน กรุณาลองใหม่อีกครั้ง..."
+        return None
     
     if error_container[0]:
         print(f"[ADK-SYNC] Thread error: {error_container[0]}")
-        return "😅 เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งนะคะ"
+        return None  # ส่ง None แทนข้อความ error
     
     if result_container[0]:
+        logger.info(f"[ADK-SYNC] Returning result: {result_container[0][:100]}...")
         return result_container[0]
     else:
-        return "🤔 ไม่สามารถประมวลผลข้อความได้ในขณะนี้ กรุณาลองใหม่อีกครั้งนะคะ"
+        logger.warning(f"[ADK-SYNC] No result returned for user: {user_id}")
+        return None  # ส่ง None แทนข้อความ error
