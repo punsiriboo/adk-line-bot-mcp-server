@@ -29,7 +29,6 @@ ENV PYTHONPATH=/app
 ENV PORT=8080
 ENV NPX_PATH=/usr/bin/npx
 ENV PATH="/usr/bin:${PATH}"
-ENV GOOGLE_APPLICATION_CREDENTIALS=""
 
 # ตรวจสอบว่า npx ทำงานได้
 RUN which npx && npx --version

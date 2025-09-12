@@ -6,7 +6,7 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 from google.adk.agents import Agent
-from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
+from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset, SseConnectionParams
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 from google.cloud import storage
@@ -100,9 +100,10 @@ try:
 
     if not channel_token or not destination_user_id:
         print("Warning: Missing LINE credentials for MCP server")
-        line_bot_server_mcp_toolset = None
+        line_bot_mcp_toolset = None
     else:
-        line_bot_server_mcp_toolset = MCPToolset(
+        # ปรับปรุงการตั้งค่า MCP เพื่อลดปัญหา event loop
+        line_bot_mcp_toolset = MCPToolset(
             connection_params=StdioConnectionParams(
                 server_params=StdioServerParameters(
                     command=npx_path,
@@ -113,9 +114,10 @@ try:
                     env={
                         "CHANNEL_ACCESS_TOKEN": channel_token,
                         "DESTINATION_USER_ID": destination_user_id,
-                        "MCP_RETRY_COUNT": "5",  # เพิ่ม retry เป็น 5 ครั้ง
-                        "MCP_TIMEOUT": "30",     # เพิ่ม timeout เป็น 30 วินาที
-                        "MCP_INITIALIZATION_TIMEOUT": "60",  # เพิ่ม initialization timeout
+                        "MCP_RETRY_COUNT": "3",  # ลด retry เป็น 3 ครั้ง
+                        "MCP_TIMEOUT": "20",     # ลด timeout เป็น 20 วินาที
+                        "MCP_INITIALIZATION_TIMEOUT": "30",  # ลด initialization timeout
+                        "NODE_ENV": "production",  # เพิ่ม NODE_ENV
                     },
                 ),
             ),
@@ -125,19 +127,19 @@ except Exception as e:
     print(f"Failed to create MCP Toolset: {e}")
     import traceback
     print(f"Traceback: {traceback.format_exc()}")
-    line_bot_server_mcp_toolset = None
+    line_bot_mcp_toolset = None
 
 agent_instruction_prompt = Path(__file__).parent / "agent_instruction_prompt.txt"
 agent_instruction_prompt = agent_instruction_prompt.read_text()
 
 agent_tools = [gemini_generate_image]
-if line_bot_server_mcp_toolset is not None:
-    agent_tools.append(line_bot_server_mcp_toolset)
+if line_bot_mcp_toolset is not None:
+    agent_tools.append(line_bot_mcp_toolset)
     print("MCP Toolset added to agent tools")
 else:
     print("MCP Toolset not available")
 
-root_agent = Agent(
+line_oa_agent = Agent(
     model='gemini-2.0-flash-001',
     name='line_oa_campaign_manager',
     description="LINE Bot Campaign Manager",

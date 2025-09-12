@@ -3,7 +3,7 @@ import asyncio
 from dotenv import load_dotenv
 from google.adk.runners import Runner
 from google.adk.sessions import DatabaseSessionService
-from line_oa_campaign_manager.agent import root_agent
+from line_oa_campaign_manager.agent import line_oa_agent
 from utils import call_agent_async
 
 load_dotenv()
@@ -57,7 +57,7 @@ async def main_async():
     # ===== PART 4: Agent Runner Setup =====
     # Create a runner with the memory agent
     runner = Runner(
-        agent=root_agent,
+        agent=line_oa_agent,
         app_name=APP_NAME,
         session_service=session_service,
     )

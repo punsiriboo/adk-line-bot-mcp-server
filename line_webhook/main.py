@@ -3,6 +3,7 @@ import asyncio
 import threading
 from flask import Flask, request
 
+
 # LINE Bot SDK
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3 import WebhookHandler
@@ -70,49 +71,41 @@ def webhook_listening():
 def handle_text_message(event):
     user_id = event.source.user_id
     user_input = event.message.text
-    
-    # ใช้ threading เพื่อเรียกใช้ async function
-    def run_async_generate():
-        def run_in_thread():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                return loop.run_until_complete(generate_text(user_input, user_id))
-            finally:
-                loop.close()
-        
-        # ใช้ thread เพื่อไม่ให้บล็อก main thread
-        result = [None]
-        exception = [None]
-        
-        def target():
-            try:
-                result[0] = run_in_thread()
-            except Exception as e:
-                exception[0] = e
-        
-        thread = threading.Thread(target=target)
-        thread.start()
-        thread.join(timeout=30)  # timeout 30 วินาที
-        
-        if thread.is_alive():
-            return "ขออภัย การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง"
-        
-        if exception[0]:
-            print(f"Error in async call: {exception[0]}")
-            return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้ง"
-        
-        return result[0] or "ขออภัย ไม่สามารถประมวลผลข้อความได้ กรุณาลองใหม่อีกครั้ง"
-    
-    response = run_async_generate()
-    
-    line_bot_api.reply_message_with_http_info(
-        ReplyMessageRequest(
-            reply_token=event.reply_token,
-            messages=[TextMessage(text=response)])
+    line_bot_api.show_loading_animation(
+        ShowLoadingAnimationRequest(chat_id=event.source.user_id)
     )
-    print(f"Received text message: {event.message.text}")
-    print(f"Response: {response}")
+    
+    print(f"Received text message from {user_id}: {user_input}")
+    
+    try:
+        # ใช้ synchronous wrapper ที่มีอยู่แล้วใน adk_runner_service
+        from adk_runner_service import generate_text_sync
+        response = generate_text_sync(user_input, user_id)
+        
+        # ส่งคำตอบกลับไปยังผู้ใช้
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=response)])
+        )
+        
+        print(f"Response sent: {response}")
+        
+    except Exception as e:
+        import traceback
+        print(f"Error in handle_text_message: {e}")
+        print(f"Traceback: {traceback.format_exc()}")
+        
+        # ส่งข้อความ error กลับไปยังผู้ใช้
+        error_response = "😅 เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้งนะคะ"
+        try:
+            line_bot_api.reply_message_with_http_info(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=error_response)])
+            )
+        except Exception as reply_error:
+            print(f"Failed to send error response: {reply_error}")
 
 @app.route("/health", methods=["GET"])
 def health_check():
