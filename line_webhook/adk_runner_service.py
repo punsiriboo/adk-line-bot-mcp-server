@@ -4,7 +4,7 @@ ADK Runner Service สำหรับรับข้อความจาก LIN
 
 import logging
 from google.adk.runners import Runner
-from google.adk.sessions import DatabaseSessionService
+from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from line_oa_campaign_manager.agent import line_oa_agent
 
@@ -16,10 +16,10 @@ logger = logging.getLogger(__name__)
 # ---------------------------
 APP_NAME = "line_oa_campaign_manager"
 DEFAULT_USER_ID = "line_user"
-DB_URL = "sqlite:///./agent_session.db"
+# ใช้ InMemorySessionService เพื่อหลีกเลี่ยงปัญหา database schema ใน Cloud Run
+session_service = InMemorySessionService()
+print(f"[ADK] InMemorySessionService initialized successfully")
 
-
-session_service = DatabaseSessionService(db_url=DB_URL)
 runner = Runner(
     agent=line_oa_agent,
     app_name=APP_NAME,
@@ -27,6 +27,7 @@ runner = Runner(
 )
 
 # เก็บ mapping: user_id -> session_id (อยู่ในหน่วยความจำของโปรเซสนี้)
+# ลบ cache เพื่อให้สร้าง session ใหม่เสมอ (แก้ปัญหา database schema)
 user_sessions: dict[str, str] = {}
 
 # เก็บ runner instances แยกตาม user เพื่อป้องกัน event loop conflicts
@@ -35,29 +36,8 @@ user_runners: dict[str, Runner] = {}
 
 # -------------------------
 async def get_or_create_session(user_id: str) -> str:
-    """ดึงหรือสร้าง session สำหรับ user_id เดิมจะอ้างอิง session เดิมเสมอ"""
-    # ตรวจสอบในหน่วยความจำก่อน
-    if user_id in user_sessions:
-        print(f"[ADK] Using cached session for {user_id}: {user_sessions[user_id]}")
-        return user_sessions[user_id]
-
-    # ตรวจสอบในฐานข้อมูลว่ามี session อยู่แล้วหรือไม่
-    try:
-        existing_sessions = await session_service.list_sessions(
-            app_name=APP_NAME,
-            user_id=user_id,
-        )
-        
-        if existing_sessions and hasattr(existing_sessions, "sessions") and existing_sessions.sessions:
-            # ใช้ session ที่มีอยู่แล้ว (ล่าสุด)
-            session_id = existing_sessions.sessions[0].id
-            user_sessions[user_id] = session_id
-            print(f"[ADK] Found existing session for {user_id}: {session_id}")
-            return session_id
-    except Exception as e:
-        print(f"[ADK] Error checking existing sessions: {e}")
-
-    # สร้าง session ใหม่ถ้าไม่มี
+    """สร้าง session ใหม่เสมอเพื่อหลีกเลี่ยงปัญหา database schema"""
+    # สร้าง session ใหม่เสมอเพื่อหลีกเลี่ยงปัญหา database schema
     try:
         new_session = await session_service.create_session(
             app_name=APP_NAME,
@@ -69,9 +49,12 @@ async def get_or_create_session(user_id: str) -> str:
         return new_session.id
     except Exception as e:
         print(f"[ADK] Error creating session: {e}")
+        import traceback
+        print(f"[ADK] Session creation traceback: {traceback.format_exc()}")
         # Fallback: สร้าง session ID แบบง่าย
         fallback_session_id = f"fallback_{user_id}_{hash(user_id) % 10000}"
         user_sessions[user_id] = fallback_session_id
+        print(f"[ADK] Using fallback session ID: {fallback_session_id}")
         return fallback_session_id
 
 
@@ -79,7 +62,7 @@ async def get_or_create_session(user_id: str) -> str:
 # Event processing
 # ---------------------------
 async def process_agent_response(event) -> str | None:
-    """คืนข้อความสุดท้าย (final response) หาก event นั้นเป็น final"""
+    """คืนข้อความสุดท้าย (final response) หาก event นั้นเป็น final หรือมี text content"""
     # debug เล็กน้อย (ไม่บังคับ)
     print(f"[event] id={event.id} author={event.author}")
 
@@ -99,12 +82,25 @@ async def process_agent_response(event) -> str | None:
             if getattr(part, "code_execution_result", None):
                 print(f"  code result: {part.code_execution_result.outcome}")
 
-    # ถ้าเป็น final ให้ดึงข้อความแรกที่เป็น text ออกมาเป็นคำตอบ
+    # ตรวจสอบว่ามี text content หรือไม่ (ไม่จำเป็นต้องเป็น final response เสมอ)
+    if event.content and event.content.parts:
+        for part in event.content.parts:
+            if getattr(part, "text", None) and part.text.strip():
+                text_content = part.text.strip()
+                print(f"[ADK] Found text content: {text_content[:100]}...")
+                
+                # ถ้าเป็น final response ให้คืนทันที
+                if event.is_final_response():
+                    print(f"[ADK] Final response detected: {text_content[:100]}...")
+                    return text_content
+                
+                # ถ้าไม่ใช่ final response แต่มี text content ให้เก็บไว้
+                # (จะคืนในภายหลังถ้าไม่มี final response)
+                return text_content
+
+    # ถ้าเป็น final response แต่ไม่มี text content
     if event.is_final_response():
-        if event.content and event.content.parts:
-            for part in event.content.parts:
-                if getattr(part, "text", None) and part.text.strip():
-                    return part.text.strip()
+        print("[ADK] Final response detected but no text content")
         return None
 
     return None
@@ -141,27 +137,50 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
         # 4) รัน agent และดึงคำตอบสุดท้าย
         async def run_once() -> str | None:
             final_text = None
+            last_text_response = None
             event_count = 0
             try:
                 print(f"[ADK] Starting agent run for session: {session_id}")
                 
                 # ใช้ try-except เพื่อจัดการกับ async generator
                 try:
-                    async for event in user_runner.run_async(
+                    async_gen = user_runner.run_async(
                         user_id=current_user_id,
                         session_id=session_id,
                         new_message=content,
-                    ):
-                        event_count += 1
-                        print(f"[ADK] Event {event_count}: {event.id}")
-                        
-                        resp = await process_agent_response(event)
-                        if resp is not None:
-                            final_text = resp
-                            print(f"[ADK] Final response received: {resp[:100]}...")
-                            break
+                    )
+                    
+                    try:
+                        async for event in async_gen:
+                            event_count += 1
+                            print(f"[ADK] Event {event_count}: {event.id}")
                             
-                    print(f"[ADK] Agent run completed. Total events: {event_count}")
+                            resp = await process_agent_response(event)
+                            if resp is not None:
+                                # ถ้าเป็น final response ให้คืนทันที
+                                if event.is_final_response():
+                                    final_text = resp
+                                    print(f"[ADK] Final response received: {resp[:100]}...")
+                                    break
+                                else:
+                                    # เก็บ response ล่าสุดไว้เผื่อไม่มี final response
+                                    last_text_response = resp
+                                    print(f"[ADK] Non-final response received: {resp[:100]}...")
+                                
+                        print(f"[ADK] Agent run completed. Total events: {event_count}")
+                        
+                        # ถ้าไม่มี final response แต่มี text response ให้ใช้ตัวล่าสุด
+                        if final_text is None and last_text_response is not None:
+                            final_text = last_text_response
+                            print(f"[ADK] Using last text response: {final_text[:100]}...")
+                    
+                    finally:
+                        # ปิด async generator อย่างปลอดภัย
+                        try:
+                            await async_gen.aclose()
+                        except Exception as close_error:
+                            # ไม่ log error นี้เพราะเป็นปัญหาใน MCP library
+                            pass
                     
                 except Exception as gen_error:
                     print(f"[ADK] Error in async generator: {gen_error}")
@@ -206,7 +225,11 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
             return final_response_text
         
         print("[ADK] No response received from agent")
-        return None
+        
+        # ถ้า agent ไม่ตอบเลย ให้ส่งข้อความ fallback
+        fallback_message = "ขออภัยครับ ฉันไม่สามารถตอบคำถามนี้ได้ในขณะนี้ กรุณาลองใหม่อีกครั้งครับ"
+        print(f"[ADK] Using fallback response: {fallback_message}")
+        return fallback_message
 
     except Exception as e:
         import traceback
@@ -253,6 +276,10 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
             finally:
                 # ปิด loop อย่างปลอดภัย
                 try:
+                    # รอสักครู่เพื่อให้ async operations เสร็จสิ้น
+                    import time
+                    time.sleep(0.2)
+                    
                     # ยกเลิก pending tasks ก่อน
                     pending = asyncio.all_tasks(loop)
                     if pending:
@@ -269,8 +296,7 @@ def generate_text_sync(user_input: str, user_id: str | None = None) -> str:
                             print(f"[ADK-SYNC] Error gathering tasks: {gather_error}")
                     
                     # รอสักครู่เพื่อให้ subprocess cleanup เสร็จ
-                    import time
-                    time.sleep(0.1)
+                    time.sleep(0.3)
                     
                     # ปิด loop
                     if not loop.is_closed():

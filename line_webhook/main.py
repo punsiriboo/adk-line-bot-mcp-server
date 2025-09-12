@@ -2,8 +2,27 @@ import os
 import asyncio
 import threading
 import logging
+import yaml
 from flask import Flask, request
 
+# โหลด environment variables จากไฟล์ env.yaml
+def load_env_vars():
+    """โหลด environment variables จากไฟล์ env.yaml"""
+    try:
+        with open('env.yaml', 'r', encoding='utf-8') as file:
+            env_data = yaml.safe_load(file)
+            if env_data:
+                for key, value in env_data.items():
+                    if value:  # เฉพาะค่าที่ไม่ใช่ None หรือ empty
+                        os.environ[key] = str(value)
+                        print(f"Loaded env var: {key}")
+    except FileNotFoundError:
+        print("Warning: env.yaml file not found, using system environment variables")
+    except Exception as e:
+        print(f"Error loading env.yaml: {e}")
+
+# โหลด environment variables
+load_env_vars()
 
 # LINE Bot SDK
 from linebot.v3.exceptions import InvalidSignatureError
