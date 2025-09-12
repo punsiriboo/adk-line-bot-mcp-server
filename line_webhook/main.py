@@ -68,67 +68,51 @@ def webhook_listening():
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_text_message(event):
-    def run_async_in_thread():
-        """รัน async function ใน thread แยกเพื่อหลีกเลี่ยงปัญหา cancel scope"""
-        try:
-            # สร้าง event loop ใหม่ใน thread นี้
+    user_id = event.source.user_id
+    user_input = event.message.text
+    
+    # ใช้ threading เพื่อเรียกใช้ async function
+    def run_async_generate():
+        def run_in_thread():
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            
-            async def process_message():
-                try:
-                    user_id = event.source.user_id
-                    line_bot_api.show_loading_animation(
-                        ShowLoadingAnimationRequest(chat_id=user_id)
-                    )
-                    print(f"User ID: {user_id}")
-                    print(f"Message: {event.message.text}")
-
-                    gemini_response = await generate_text(
-                        user_input=event.message.text,
-                        user_id=user_id
-                    )
-                        
-                    print(f"Gemini Response: {gemini_response}")
-
-                    line_bot_api.reply_message(
-                        ReplyMessageRequest(
-                            reply_token=event.reply_token,
-                            messages=[TextMessage(text=gemini_response)],
-                        )
-                    )
-                except Exception as e:
-                    import traceback
-                    print(f"Error in handle_text_message: {e}")
-                    print(f"Traceback: {traceback.format_exc()}")
-                    
-                    # ส่งข้อความแจ้งข้อผิดพลาด
-                    try:
-                        line_bot_api.reply_message(
-                            ReplyMessageRequest(
-                                reply_token=event.reply_token,
-                                messages=[TextMessage(text="ขออภัย เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้ง")],
-                            )
-                        )
-                    except Exception as reply_error:
-                        print(f"Failed to send error reply: {reply_error}")
-            
-            # รัน async function ใน event loop ของ thread นี้
-            loop.run_until_complete(process_message())
-            
-        except Exception as e:
-            print(f"Error in thread: {e}")
-        finally:
-            # ปิด event loop
             try:
+                return loop.run_until_complete(generate_text(user_input, user_id))
+            finally:
                 loop.close()
-            except:
-                pass
+        
+        # ใช้ thread เพื่อไม่ให้บล็อก main thread
+        result = [None]
+        exception = [None]
+        
+        def target():
+            try:
+                result[0] = run_in_thread()
+            except Exception as e:
+                exception[0] = e
+        
+        thread = threading.Thread(target=target)
+        thread.start()
+        thread.join(timeout=30)  # timeout 30 วินาที
+        
+        if thread.is_alive():
+            return "ขออภัย การประมวลผลใช้เวลานานเกินไป กรุณาลองใหม่อีกครั้ง"
+        
+        if exception[0]:
+            print(f"Error in async call: {exception[0]}")
+            return "ขออภัย เกิดข้อผิดพลาดในการประมวลผล กรุณาลองใหม่อีกครั้ง"
+        
+        return result[0] or "ขออภัย ไม่สามารถประมวลผลข้อความได้ กรุณาลองใหม่อีกครั้ง"
     
-    # รันใน thread แยก
-    thread = threading.Thread(target=run_async_in_thread)
-    thread.daemon = True
-    thread.start()
+    response = run_async_generate()
+    
+    line_bot_api.reply_message_with_http_info(
+        ReplyMessageRequest(
+            reply_token=event.reply_token,
+            messages=[TextMessage(text=response)])
+    )
+    print(f"Received text message: {event.message.text}")
+    print(f"Response: {response}")
 
 @app.route("/health", methods=["GET"])
 def health_check():
