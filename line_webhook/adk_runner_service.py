@@ -14,9 +14,7 @@ APP_NAME = "line_oa_campaign_manager"
 DEFAULT_USER_ID = "line_user"
 DB_URL = "sqlite:///./agent_session.db"
 
-# ---------------------------
-# Services
-# ---------------------------
+
 session_service = DatabaseSessionService(db_url=DB_URL)
 runner = Runner(
     agent=root_agent,

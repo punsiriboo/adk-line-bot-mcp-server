@@ -10,6 +10,9 @@ from google.adk.tools.mcp_tool.mcp_toolset import MCPToolset
 from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from mcp import StdioServerParameters
 from google.cloud import storage
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def gemini_generate_image(prompt: str):
@@ -37,23 +40,26 @@ def gemini_generate_image(prompt: str):
             config=types.GenerateContentConfig(response_modalities=["IMAGE"])
         )
 
-        part = next((p for p in res.candidates[0].content.parts
-                     if getattr(p, "inline_data", None) and p.inline_data.data), None)
-        if not part:
-            return "Image generation failed"
-
-        ext = mimetypes.guess_extension(part.inline_data.mime_type) or ".bin"
-        path = Path(f"{uuid.uuid4()}{ext}")
-        path.write_bytes(part.inline_data.data)
-
-        bucket = storage_client.bucket("line-oa-campaign-manager-images")
-        blob = bucket.blob(path.name)
-        blob.upload_from_filename(str(path))
-
-        return f"https://storage.googleapis.com/line-oa-campaign-manager-images/{path.name}"
+        for part in res.candidates[0].content.parts:
+            if getattr(part, "inline_data", None) and part.inline_data.data:
+                ext = mimetypes.guess_extension(part.inline_data.mime_type) or ".bin"
+                image_uuid = str(uuid.uuid4())
+                path = Path(f"{image_uuid}{ext}")
+                path.write_bytes(part.inline_data.data)
+                print(f"Saved image: {path}")
+                gcs_path = f"gs://line-oa-campaign-manager-images/{path.name}"
+                public_url = f"https://storage.googleapis.com/line-oa-campaign-manager-images/{path.name}"
+                bucket = storage_client.bucket("line-oa-campaign-manager-images")
+                blob = bucket.blob(path.name)
+                blob.upload_from_filename(path)
+                print(f"Uploaded image to: {gcs_path}")
+                return public_url
+        return "Image generation failed"
     except Exception as e:
-        return f"Error generating image: {e}"
+        print(f"Error in gemini_generate_image: {e}")
+        return f"Error generating image: {str(e)}"
 
+# ใช้ absolute path ของ npx สำหรับ Docker container
 def get_npx_path():
     """หาตำแหน่ง npx command สำหรับ Docker container"""
     # ใช้ environment variable ก่อน

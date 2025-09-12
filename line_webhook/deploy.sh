@@ -2,6 +2,7 @@ source ./init.sh
 set -e
 
 # ตั้งค่า variables
+gcloud config set account punsiri.boo@gmail.com
 PROJECT_ID=${GOOGLE_CLOUD_PROJECT:-"databeat-aiagent"}
 SERVICE_NAME="line-bot-mcp-server"
 REGION="asia-southeast1"
