@@ -201,23 +201,39 @@ async def generate_text(user_input: str, user_id: str | None = None) -> str:
             return final_text
 
         # กำหนด timeout 60 วินาที เพื่อรอคำตอบจาก ADK Agent
-        try:
-            print(f"[ADK] Starting agent with 60s timeout...")
-            final_response_text = await asyncio.wait_for(run_once(), timeout=60.0)
-            print(f"[ADK] Agent completed successfully")
-        except asyncio.TimeoutError:
-            print("[ADK] Timeout: agent took more than 60 seconds")
-            return None
-        except RuntimeError as e:
-            if "Event loop is closed" in str(e):
-                print("[ADK] Event loop closed error in wait_for")
-                return None
-            else:
-                print(f"[ADK] Runtime error in wait_for: {e}")
-                raise
-        except Exception as e:
-            print(f"[ADK] Unexpected error in wait_for: {e}")
-            return None
+        # เพิ่ม retry mechanism สำหรับ MCP toolset ที่ไม่เสถียร
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                print(f"[ADK] Starting agent with 60s timeout (attempt {attempt + 1}/{max_retries})...")
+                final_response_text = await asyncio.wait_for(run_once(), timeout=60.0)
+                print(f"[ADK] Agent completed successfully")
+                break  # สำเร็จแล้ว ออกจาก loop
+            except asyncio.TimeoutError:
+                print(f"[ADK] Timeout: agent took more than 60 seconds (attempt {attempt + 1})")
+                if attempt == max_retries - 1:
+                    return None
+                print(f"[ADK] Retrying...")
+                await asyncio.sleep(2)  # รอ 2 วินาทีก่อน retry
+            except RuntimeError as e:
+                if "Event loop is closed" in str(e):
+                    print("[ADK] Event loop closed error in wait_for")
+                    return None
+                elif "cancel scope" in str(e).lower():
+                    print(f"[ADK] MCP cancel scope error (attempt {attempt + 1}): {e}")
+                    if attempt == max_retries - 1:
+                        return None
+                    print(f"[ADK] Retrying...")
+                    await asyncio.sleep(2)  # รอ 2 วินาทีก่อน retry
+                else:
+                    print(f"[ADK] Runtime error in wait_for: {e}")
+                    raise
+            except Exception as e:
+                print(f"[ADK] Unexpected error in wait_for (attempt {attempt + 1}): {e}")
+                if attempt == max_retries - 1:
+                    return None
+                print(f"[ADK] Retrying...")
+                await asyncio.sleep(2)  # รอ 2 วินาทีก่อน retry
 
         # 5) ส่งเฉพาะคำตอบจาก agent จริงๆ
         if final_response_text and final_response_text.strip():

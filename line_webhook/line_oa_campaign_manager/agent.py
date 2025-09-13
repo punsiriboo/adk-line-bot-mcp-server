@@ -114,12 +114,14 @@ try:
                     env={
                         "CHANNEL_ACCESS_TOKEN": channel_token,
                         "DESTINATION_USER_ID": destination_user_id,
-                        "MCP_RETRY_COUNT": "1",  # ลด retry เป็น 1 ครั้ง
-                        "MCP_TIMEOUT": "10",     # ลด timeout เป็น 10 วินาที
-                        "MCP_INITIALIZATION_TIMEOUT": "15",  # ลด initialization timeout
+                        "MCP_RETRY_COUNT": "3",  # เพิ่ม retry เป็น 3 ครั้ง
+                        "MCP_TIMEOUT": "45",     # เพิ่ม timeout เป็น 45 วินาที
+                        "MCP_INITIALIZATION_TIMEOUT": "45",  # เพิ่ม initialization timeout
                         "NODE_ENV": "production",  # เพิ่ม NODE_ENV
                         "NODE_NO_WARNINGS": "1",   # ปิด warnings
-                        "MCP_CLEANUP_TIMEOUT": "5",  # เพิ่ม cleanup timeout
+                        "MCP_CLEANUP_TIMEOUT": "15",  # เพิ่ม cleanup timeout
+                        "MCP_CONNECTION_RETRY_DELAY": "2000",  # เพิ่ม delay ระหว่าง retry
+                        "MCP_MAX_CONNECTION_ATTEMPTS": "5",  # เพิ่มจำนวนครั้งที่พยายามเชื่อมต่อ
                     },
                 ),
             ),
